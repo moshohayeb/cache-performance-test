@@ -50,10 +50,29 @@ unit_translate(uint64_t number, float *f_number, char *unit)
 }
 
 void
+swap(int *a, int *b)
+{
+    int temp = *a;
+
+    *a = *b;
+    *b = temp;
+}
+
+void
+randomize(int arr[], int n)
+{
+    for (int i = n - 1; i > 0; i--) {
+        // Pick a random index from 0 to i
+        int j = rand() % (i + 1);
+        swap(&arr[i], &arr[j]);
+    }
+}
+
+void
 ll_shuffle(ll_element *array, size_t n)
 {
     size_t i;
-    int ll_map[n];
+    int    ll_map[n];
 
     // fill map
     for (i = 0; i < n; i++) {
@@ -61,20 +80,23 @@ ll_shuffle(ll_element *array, size_t n)
     }
 
     // shuffle map
-    for (i = 0; i < n - 1; i++) {
+    for (i = 0; i < n; i++) {
         size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
-        int t = ll_map[j];
+        int    t = ll_map[j];
         ll_map[j] = ll_map[i];
         ll_map[i] = t;
     }
 
+
     // rearrenage linked list
     ll_element *elt;
-    for (i = 0; i < n - 1; i++) {
+    for (i = 0; i < n; i++) {
         elt = &array[i];
         elt->next = &array[ll_map[i]];
+        printf("making ll element %d next to %ld\n", i, ll_map[i]);
     }
-    elt->next = NULL;
+    // elt->next = NULL;
+    // exit(0);
 
 }
 
@@ -127,6 +149,7 @@ main(int argc, char const *argv[])
     printf("Size of struct = %lu\n", sizeof(ll_element));
     ll_element *head = ll_build();
     srand(time(NULL));
+    ll_print(head);
     ll_shuffle(head, N_ELEMENTS);
     ll_print(head);
 
