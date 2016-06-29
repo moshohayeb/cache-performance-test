@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <time.h>
 #include <stdlib.h>
 
 
@@ -52,18 +53,28 @@ void
 ll_shuffle(ll_element *array, size_t n)
 {
     size_t i;
+    int ll_map[n];
 
+    // fill map
+    for (i = 0; i < n; i++) {
+        ll_map[i] = i;
+    }
+
+    // shuffle map
     for (i = 0; i < n - 1; i++) {
         size_t j = i + rand() / (RAND_MAX / (n - i) + 1);
-        ll_element t = array[j];
-        array[j] = array[i];
-        array[i] = t;
+        int t = ll_map[j];
+        ll_map[j] = ll_map[i];
+        ll_map[i] = t;
     }
 
-    for (i = 0; i < n; i++) {
-        ll_element *elt = &array[i];
-        elt->next = &array[i+1];
+    // rearrenage linked list
+    ll_element *elt;
+    for (i = 0; i < n - 1; i++) {
+        elt = &array[i];
+        elt->next = &array[ll_map[i]];
     }
+    elt->next = NULL;
 
 }
 
@@ -115,7 +126,7 @@ main(int argc, char const *argv[])
 
     printf("Size of struct = %lu\n", sizeof(ll_element));
     ll_element *head = ll_build();
-    srand(time());
+    srand(time(NULL));
     ll_shuffle(head, N_ELEMENTS);
     ll_print(head);
 
