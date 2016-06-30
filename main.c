@@ -12,8 +12,8 @@
 #define MBPS (1ull * 1000 * 1000)
 #define KBPS (1ull * 1000)
 
-#define NPAD       1
-#define N_ELEMENTS 1000
+#define NPAD       2
+#define N_ELEMENTS 10000
 #define N_ITER     100000
 
 typedef struct _elt {
@@ -111,14 +111,14 @@ ll_process(ll_element *head)
 {
     int i;
 
-    for (i = 0; i < N_ITER; i++) {
-        ll_element *h = head;
+    // for (i = 0; i < N_ITER; i++) {
 
+        ll_element *h = head;
         while (h) {
             h->index = 0x234251f;
             h = h->next;
         }
-    }
+    // }
 }
 
 
@@ -144,6 +144,6 @@ main(int argc, char const *argv[])
     unit_translate(N_ELEMENTS * sizeof(ll_element), &working_set_size, &unit);
     printf("Total Working Set Size: %.1f %cB\n", working_set_size, unit);
     printf("Total Cycles Time: %llu\n",          cycles);
-    printf("Cycle Per Element: %lu\n",           (long unsigned) (cycles / N_ELEMENTS / N_ITER));
+    printf("Cycle Per Element: %lu\n",           (long unsigned) (cycles / N_ELEMENTS));
     return 0;
 }
