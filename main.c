@@ -1,149 +1,111 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
+#include <sys/time.h>
+#include <inttypes.h>
 #include <stdlib.h>
 
 
+void translate(uint64_t number, float *f_number, char *unit);
 
-
-
-#define TBPS (1ull * 1000 * 1000 * 1000 * 1000)
-#define GBPS (1ull * 1000 * 1000 * 1000)
-#define MBPS (1ull * 1000 * 1000)
-#define KBPS (1ull * 1000)
-
-#define NPAD       2
-#define N_ELEMENTS 10000
-#define N_ITER     100000
-
+#define NPAD 0
 typedef struct _elt {
     struct _elt *next;
-    long int    index;
     long int    pad[NPAD];
 } ll_element;
 
-static __inline__ unsigned long long
-rdtsc(void)
-{
-    unsigned long long int x;
-
-    __asm__ volatile (".byte 0x0f, 0x31" : "=A" (x));
-    return x;
-}
 
 void
-unit_translate(uint64_t number, float *f_number, char *unit)
-{
-    if (number > TBPS) {
-        *f_number = number * 1.0 / TBPS;
-        *unit = 'T';
-    } else if (number > GBPS) {
-        *f_number = number * 1.0 / GBPS;
-        *unit = 'G';
-    } else if (number > MBPS) {
-        *f_number = number * 1.0 / MBPS;
-        *unit = 'M';
-    } else if (number > KBPS) {
-        *f_number = number * 1.0 / KBPS;
-        *unit = 'K';
-    } else {
-        *f_number = number * 1.0;
-        *unit = ' ';
-    }
-}
-
-
-void
-ll_shuffle(ll_element *array, size_t n)
+ll_sequence(ll_element **array, size_t n)
 {
     size_t i;
 
-    // shuffle the array
     for (i = 0; i < n; i++) {
-        int idx1 = rand() % n;
-        int idx2 = rand() % n;
-
-        ll_element t = array[idx1];
-        array[idx1] = array[idx2];
-        array[idx2] = t;
+        array[i]->next = i == n - 1 ? array[0] : array[i + 1];
+        // printf("Element at index=%d (%p), Next at (%p)\n", i, array[i], array[i]->next);
     }
-
-    // reconnect the dots
-    for (i = 0; i < n - 1; i++) {
-        array[i].next = &array[i + 1];
-    }
-
-    array[n - 1].next = NULL;
 }
+
+void
+ll_shuffle(ll_element **array, size_t n)
+{
+    size_t i;
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+    int usec = tv.tv_usec;
+    srand48(usec);
+
+    for (i = n - 1; i > 0; i--) {
+        size_t j = (unsigned int) (drand48() * (i + 1));
+        ll_element *t = array[j];
+        array[j] = array[i];
+        array[i] = t;
+    }
+}
+
 
 ll_element *
-ll_build(void)
+ll_build(size_t n, int shuf)
 {
-    int i;
-    ll_element *p, *prev, *curr;
+    size_t i;
+    ll_element **copy;
+    ll_element *array;
 
-    p = prev = calloc(N_ELEMENTS, sizeof(ll_element));
-    if (!p) { return NULL; }
+    array = calloc(n, sizeof(ll_element));
+    if (!array) { return NULL; }
 
-    for (i = 0; i < N_ELEMENTS; i++) {
-        curr = (ll_element *) (p + i);
-        curr->index = i;
-        if (i != 0) {
-            prev->next = curr;
-            prev = curr;
-        }
+    copy = calloc(n, sizeof(ll_element *));
+    if (!copy) { return NULL; }
+
+    for (i = 0; i < n; i++) {
+        copy[i] = (ll_element *) (array + i);
+        copy[i]->next = i == n - 1 ? array : (array + i + 1);
+        // printf("Element at index=%d (%p), Next at (%p)\n", i, copy[i], copy[i]->next);
     }
 
-    return p;
+    if (shuf) {
+        ll_shuffle(copy, n);
+    }
+
+    ll_sequence(copy, n);
+    return array;
 }
 
 void
-ll_print(ll_element *head)
+ll_iterate(ll_element *head, size_t iter, int print)
 {
-    while (head) {
-        printf("Index: %lu\n", head->index);
-        head = head->next;
+    size_t i;
+    ll_element *p;
+
+    p = head;
+    for (i = 0; i < iter; i++) {
+        p = p->next;
     }
 }
 
-void
-ll_process(ll_element *head)
-{
-    int i;
-
-    // for (i = 0; i < N_ITER; i++) {
-
-        ll_element *h = head;
-        while (h) {
-            h->index = 0x234251f;
-            h = h->next;
-        }
-    // }
-}
 
 
 int
 main(int argc, char const *argv[])
 {
-    srand(time(NULL));
-
-    printf("Size of struct = %lu\n", sizeof(ll_element));
-    ll_element *head = ll_build();
-    ll_shuffle(head, N_ELEMENTS);
-    // ll_print(head);
-
-    printf("Starting...\n");
-    unsigned long long begin = rdtsc();
-    ll_process(head);
-    unsigned long long end = rdtsc();
-    unsigned long long cycles = end - begin;
-    printf("Finished...\n");
+    unsigned long long n_elements = atoi(argv[2]);
+    unsigned long long iterations = atoi(argv[3]);
+    int shuffle = strcmp(argv[1], "shuffle") == 0;
 
     float working_set_size;
     char  unit;
-    unit_translate(N_ELEMENTS * sizeof(ll_element), &working_set_size, &unit);
-    printf("Total Working Set Size: %.1f %cB\n", working_set_size, unit);
-    printf("Total Cycles Time: %llu\n",          cycles);
-    printf("Cycle Per Element: %lu\n",           (long unsigned) (cycles / N_ELEMENTS));
+
+    translate(n_elements * sizeof(ll_element), &working_set_size, &unit);
+    printf("Structure Size = %lu Bytes\n",        sizeof(ll_element));
+    printf("Number of Elements = %llu\n",         n_elements);
+    printf("Total Working Set Size = %.1f %cB\n", working_set_size, unit);
+    printf("Total Iteration = %llu\n",            iterations);
+    printf("Shuffle Enabled = %s\n",              shuffle ? "Yes" : "No");
+
+    srand(time(NULL));
+    ll_element *head = ll_build(n_elements, shuffle);
+    ll_iterate(head, iterations, 0);
     return 0;
 }

@@ -1,0 +1,82 @@
+#!/bin/sh
+
+
+perf_tmp=$(mktemp)
+bench_tmp=$(mktemp)
+
+gcc -Wall -g3 -o bench main.c utils.c
+
+
+L1d=$(lscpu | grep 'L1d cache' | awk -F':' '{print $2}' | tr -d ' ') 
+L1i=$(lscpu | grep 'L1i cache' | awk -F':' '{print $2}' | tr -d ' ') 
+L2=$(lscpu | grep 'L2 cache' | awk -F':' '{print $2}' | tr -d ' ') 
+L3=$(lscpu | grep 'L3 cache' | awk -F':' '{print $2}' | tr -d ' ') 
+echo "L1 Data Cache: $L1d"
+echo "L1 Instruction Cache: $L1i"
+echo "L2 Cache: $L2"
+echo "L3 Cache: $L3"
+echo "------------------------------------"
+
+function prepare() {
+    > $perf_tmp 
+    > $bench_tmp
+}
+
+function execute() {
+    shuffle=$1
+    n_elements=$2
+    n_iter=$3
+    perf stat -e cycles:u ./bench $shuffle $n_elements $n_iter > $bench_tmp 2> $perf_tmp
+}
+
+function process() {
+    shuf=$(cat $bench_tmp | grep 'Shuffle Enabled' | awk -F'=' {'print $2'} | tr -d ' ')
+    iterations=$(cat $bench_tmp | grep 'Total Iteration' | awk -F '=' '{print $2}' | tr -d ' ')
+    cycles=$(cat $perf_tmp  | grep 'cycles:u' | awk '{print $1}' | tr -d ',')
+    cycle_per_iter=$((cycles / iterations))
+    struct_size=$(cat $bench_tmp | grep 'Structure Size' | awk -F '=' '{print $2}' | tr -d ' ')
+    working_set_size=$(cat $bench_tmp | grep 'Working Set' | awk -F '=' '{print $2}' | tr -d ' ')
+    if [ "$shuf" == "Yes" ]; then
+        sequential="Yes"
+    else
+        sequential="No"
+    fi
+
+    printf "%16s = %10s\n" "Sequential"  $sequential
+    printf "%16s = %10s\n" "Struct Size"  $struct_size
+    printf "%16s = %10s\n" "Total Cycles"  $cycles
+    printf "%16s = %10s\n" "Total Iter"  $iterations
+    printf "%16s = %10s\n" "Cycle Per Iter"  $cycle_per_iter
+    printf "%16s = %10s\n" "Set Size"  $working_set_size
+    echo "------------------------------------"
+
+    # echo $1
+    # cat $tmp
+    # cat $perf_tmp
+    # cat $bench_tmp
+    # echo ""
+}
+
+N_ELEMENTS=(3000 29000 500000 9000000)
+if [ "$1" == "" ]; then
+    N_ITER=1000000000
+else 
+    N_ITER=$1
+fi
+
+
+for n in "${N_ELEMENTS[@]}"; do
+    prepare
+    execute "sequential" $n $N_ITER
+    process
+done
+
+for n in "${N_ELEMENTS[@]}"; do
+    prepare
+    execute "shuffle" $n $N_ITER
+    process
+done
+
+
+
+# rm -f $perf_tmp $bench_tmp
