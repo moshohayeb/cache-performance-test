@@ -27,16 +27,24 @@ function execute() {
     shuffle=$1
     n_elements=$2
     n_iter=$3
-    perf stat -e cycles:u ./bench $shuffle $n_elements $n_iter > $bench_tmp 2> $perf_tmp
+    perf stat --repeat=5 -e LLC-load-misses:u -e L1-dcache-load-misses:u -e cache-misses:u -e cycles:u ./bench $shuffle $n_elements $n_iter > $bench_tmp 2> $perf_tmp
 }
 
 function process() {
-    shuf=$(cat $bench_tmp | grep 'Shuffle Enabled' | awk -F'=' {'print $2'} | tr -d ' ')
-    iterations=$(cat $bench_tmp | grep 'Total Iteration' | awk -F '=' '{print $2}' | tr -d ' ')
+    shuf=$(cat $bench_tmp | grep 'Shuffle Enabled' | head -1 | awk -F'=' {'print $2'} | tr -d ' ')
+    duration=$(cat $perf_tmp  | grep 'seconds time elapsed' | head -1 | awk '{printf("%0.5f\n", $1)}')
     cycles=$(cat $perf_tmp  | grep 'cycles:u' | awk '{print $1}' | tr -d ',')
+    cache_misses=$(cat $perf_tmp  | grep 'cache-misses:u' | awk '{print $1}' | tr -d ',')
+    l1d_cache_misses=$(cat $perf_tmp  | grep 'L1-dcache-load-misses' | awk '{print $1}' | tr -d ',')
+    llc_cache_misses=$(cat $perf_tmp  | grep 'LLC-load-misses' | awk '{print $1}' | tr -d ',')
+
+    iterations=$(cat $bench_tmp | grep 'Total Iteration' | head -1 |awk -F '=' '{print $2}' | tr -d ' ')
+    struct_size=$(cat $bench_tmp | grep 'Structure Size' | head -1 | awk -F '=' '{print $2}' | tr -d ' ')
+    working_set_size=$(cat $bench_tmp | grep 'Working Set' | head -1| awk -F '=' '{print $2}' | tr -d ' ')
+    n_elements=$(cat $bench_tmp | grep 'Number of Elements' | head -1 |awk -F '=' '{print $2}' | tr -d ' ')
+
     cycle_per_iter=$((cycles / iterations))
-    struct_size=$(cat $bench_tmp | grep 'Structure Size' | awk -F '=' '{print $2}' | tr -d ' ')
-    working_set_size=$(cat $bench_tmp | grep 'Working Set' | awk -F '=' '{print $2}' | tr -d ' ')
+
     if [ "$shuf" == "Yes" ]; then
         sequential="No"
     else
@@ -44,13 +52,20 @@ function process() {
     fi
 
     ns=$(echo "$cycle_per_iter $Freq" | awk '{printf("%d\n", ($1/$2) * 1000000000)}')
-    printf "%18s = %10s\n" "Sequential"  $sequential
-    printf "%18s = %10s\n" "Struct Size"  $struct_size
-    printf "%18s = %10s\n" "Total Cycles"  $cycles
-    printf "%18s = %10s\n" "Total Iter"  $iterations
-    printf "%18s = %10s\n" "Cycles Per Iter"  $cycle_per_iter
-    printf "%18s = %10s\n" "Time Per Iter (ns)"  $ns
-    printf "%18s = %10s\n" "Set Size"  $working_set_size
+    printf "%20s = %10s\n" "Set Size"  $working_set_size
+    printf "%20s = %10s\n" "Sequential"  $sequential
+    printf "%20s = %10s\n" "Struct Size"  $struct_size
+    printf "%20s = %10s\n" "# Of Elements"  $n_elements
+    printf "%20s = %10s\n" "# Of Iteration"  $iterations
+    printf "%20s = %10s\n" "Total Cycles"  $cycles
+    printf "%20s = %10s\n" "Cycles Per Iter"  $cycle_per_iter
+    printf "%20s = %10s\n" "Time Per Iter (ns)"  $ns
+    printf "%20s = %10s\n" "Cache Misses"  $cache_misses
+    printf "%20s = %10s\n" "L1 Data Cache Misses"  $l1d_cache_misses
+    printf "%20s = %10s\n" "LLC Cache Misses"  $llc_cache_misses
+    printf "%20s = %10s\n" "Duration (seconds)"  $duration
+
+
     echo "------------------------------------"
 
     # echo $1
@@ -60,7 +75,7 @@ function process() {
     # echo ""
 }
 
-N_ELEMENTS=(3000 29000 1000000 9000000)
+N_ELEMENTS=(2 50 29000 1000000 9000000)
 if [ "$1" == "" ]; then
     N_ITER=1000000000
 else 
