@@ -9,7 +9,10 @@
 
 void translate(uint64_t number, float *f_number, char *unit);
 
+#ifndef NPAD
 #define NPAD 0
+#endif
+
 typedef struct _elt {
     struct _elt *next;
     long int    pad[NPAD];

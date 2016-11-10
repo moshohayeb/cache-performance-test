@@ -4,7 +4,6 @@
 perf_tmp=$(mktemp)
 bench_tmp=$(mktemp)
 
-gcc -Wall -g3 -o bench main.c utils.c
 
 L1d=$(lscpu | grep 'L1d cache' | awk -F':' '{print $2}' | tr -d ' ') 
 L1i=$(lscpu | grep 'L1i cache' | awk -F':' '{print $2}' | tr -d ' ') 
@@ -24,9 +23,12 @@ function prepare() {
 }
 
 function execute() {
-    shuffle=$1
-    n_elements=$2
-    n_iter=$3
+    n_pad=$1
+    shuffle=$2
+    n_elements=$3
+    n_iter=$4
+
+    gcc -Wall -g3 -DNPAD=$n_pad -o bench main.c utils.c
     perf stat --repeat=5 -e LLC-load-misses:u -e L1-dcache-load-misses:u -e cache-misses:u -e cycles:u ./bench $shuffle $n_elements $n_iter > $bench_tmp 2> $perf_tmp
 }
 
@@ -75,25 +77,29 @@ function process() {
     # echo ""
 }
 
-N_ELEMENTS=(2 50 29000 1000000 9000000)
+N_ELEMENTS=(9000000)
+# N_ELEMENTS=(50 29000 1000000 9000000)
+N_PAD=(0 7 15 31)
+
 if [ "$1" == "" ]; then
     N_ITER=1000000000
 else 
     N_ITER=$1
 fi
 
-
 for n in "${N_ELEMENTS[@]}"; do
-    prepare
-    execute "sequential" $n $N_ITER
-    process
+    for pad in "${N_PAD[@]}"; do
+        prepare
+        execute $pad "sequential" $n $N_ITER
+        process
+    done
 done
 
-for n in "${N_ELEMENTS[@]}"; do
-    prepare
-    execute "shuffle" $n $N_ITER
-    process
-done
+# for n in "${N_ELEMENTS[@]}"; do
+#     prepare
+#     execute "shuffle" $n $N_ITER
+#     process
+# done
 
 
 
