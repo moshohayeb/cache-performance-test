@@ -9,12 +9,14 @@ L1d=$(lscpu | grep 'L1d cache' | awk -F':' '{print $2}' | tr -d ' ')
 L1i=$(lscpu | grep 'L1i cache' | awk -F':' '{print $2}' | tr -d ' ') 
 L2=$(lscpu | grep 'L2 cache' | awk -F':' '{print $2}' | tr -d ' ') 
 L3=$(lscpu | grep 'L3 cache' | awk -F':' '{print $2}' | tr -d ' ') 
-Freq=$(lscpu | grep 'CPU MH' | awk -F ':' '{print $2}' | tr -d ' ' | awk '{print $1 * 1000 * 1000}')
+Cacheline=$(cat /sys/devices/system/cpu/cpu0/cache/index0/coherency_line_size)
+Frequency=$(lscpu | grep 'CPU MH' | awk -F ':' '{print $2}' | tr -d ' ' | awk '{print $1 * 1000 * 1000}')
 echo "L1 Data Cache: $L1d"
 echo "L1 Instruction Cache: $L1i"
 echo "L2 Cache: $L2"
 echo "L3 Cache: $L3"
-echo "Frequency: $Freq"
+echo "Cacheline Size: "$Cacheline"B"
+echo "Frequency: $Frequency"
 echo "------------------------------------"
 
 function prepare() {
@@ -29,7 +31,12 @@ function execute() {
     n_iter=$4
 
     gcc -Wall -g3 -DNPAD=$n_pad -o bench main.c utils.c
-    perf stat --repeat=5 -e LLC-load-misses:u -e L1-dcache-load-misses:u -e cache-misses:u -e cycles:u ./bench $shuffle $n_elements $n_iter > $bench_tmp 2> $perf_tmp
+    perf stat --repeat=5                                                                \
+        -e faults                                                                       \
+        -e dTLB-store -e dTLB-store-misses                                              \
+        -e LLC-load-misses:u -e L1-dcache-load-misses -e cache-misses:u -e cycles:u     \
+        -e dTLB-load-misses -e dTLB-load                                            \
+        ./bench $shuffle $n_elements $n_iter > $bench_tmp 2> $perf_tmp
 }
 
 function process() {
@@ -39,9 +46,14 @@ function process() {
     cache_misses=$(cat $perf_tmp  | grep 'cache-misses:u' | awk '{print $1}' | tr -d ',')
     l1d_cache_misses=$(cat $perf_tmp  | grep 'L1-dcache-load-misses' | awk '{print $1}' | tr -d ',')
     llc_cache_misses=$(cat $perf_tmp  | grep 'LLC-load-misses' | awk '{print $1}' | tr -d ',')
+    tlb_load_misses=$(cat $perf_tmp  | grep 'dTLB-load-misses' | awk '{print $1}' | tr -d ',')
+    tlb_load=$(cat $perf_tmp  | grep 'dTLB-load' | grep -v 'dTLB-load-misses' | head -1 | awk '{print $1}' | tr -d ',')
+
+    if [ "$tlb_load" == "<not" ]; then tlb_load=1; fi
+    if [ "$tlb_load_misses" == "<not" ]; then tlb_load_misses=0; fi
 
     iterations=$(cat $bench_tmp | grep 'Total Iteration' | head -1 |awk -F '=' '{print $2}' | tr -d ' ')
-    struct_size=$(cat $bench_tmp | grep 'Structure Size' | head -1 | awk -F '=' '{print $2}' | tr -d ' ')
+    struct_size=$(cat $bench_tmp | grep 'Structure Size' | head -1 | awk -F '=' '{print $2}' | sed 's/ //' | awk '{print $1}')
     working_set_size=$(cat $bench_tmp | grep 'Working Set' | head -1| awk -F '=' '{print $2}' | tr -d ' ')
     n_elements=$(cat $bench_tmp | grep 'Number of Elements' | head -1 |awk -F '=' '{print $2}' | tr -d ' ')
 
@@ -53,20 +65,22 @@ function process() {
         sequential="Yes"
     fi
 
-    ns=$(echo "$cycle_per_iter $Freq" | awk '{printf("%d\n", ($1/$2) * 1000000000)}')
-    printf "%20s = %10s\n" "Set Size"  $working_set_size
-    printf "%20s = %10s\n" "Sequential"  $sequential
-    printf "%20s = %10s\n" "Struct Size"  $struct_size
-    printf "%20s = %10s\n" "# Of Elements"  $n_elements
-    printf "%20s = %10s\n" "# Of Iteration"  $iterations
-    printf "%20s = %10s\n" "Total Cycles"  $cycles
-    printf "%20s = %10s\n" "Cycles Per Iter"  $cycle_per_iter
-    printf "%20s = %10s\n" "Time Per Iter (ns)"  $ns
-    printf "%20s = %10s\n" "Cache Misses"  $cache_misses
-    printf "%20s = %10s\n" "L1 Data Cache Misses"  $l1d_cache_misses
-    printf "%20s = %10s\n" "LLC Cache Misses"  $llc_cache_misses
-    printf "%20s = %10s\n" "Duration (seconds)"  $duration
-
+    ns=$(echo "$cycle_per_iter $Frequency" | awk '{printf("%d\n", ($1/$2) * 1000000000)}')
+    printf "%-35s = %10s\n" "Set Size"  $working_set_size
+    printf "%-35s = %10s\n" "Sequential"  $sequential
+    printf "%-35s = %10s\n" "Struct Size (byte)"  $struct_size
+    printf "%-35s = %10s\n" "Elements Per Cache Line"  $((Cacheline / struct_size))
+    printf "%-35s = %10s\n" "# Of Elements"  $n_elements
+    printf "%-35s = %10s\n" "# Of Iteration"  $iterations
+    printf "%-35s = %10s\n" "Total Cycles"  $cycles
+    printf "%-35s = %10s\n" "Cycles Per Item"  $cycle_per_iter
+    printf "%-35s = %10s\n" "Time Per Item (ns)"  $ns
+    printf "%-35s = %10s\n" "Cache Misses"  $cache_misses
+    printf "%-35s = %10s\n" "L1 Data Cache Misses"  $l1d_cache_misses
+    printf "%-35s = %10s\n" "LLC Cache Misses"  $llc_cache_misses
+    printf "%-35s = %10s\n" "TLB Load"  $tlb_load
+    printf "%-35s = %10s (%0.2f%%)\n" "TLB Load Miss"  $tlb_load_misses $((tlb_load_misses / tlb_load))
+    printf "%-35s = %10s\n" "Duration (second)"  $duration
 
     echo "------------------------------------"
 
@@ -77,9 +91,10 @@ function process() {
     # echo ""
 }
 
-N_ELEMENTS=(9000000)
+N_ELEMENTS=(10000)
 # N_ELEMENTS=(50 29000 1000000 9000000)
-N_PAD=(0 7 15 31)
+# N_PAD=(0 7 15 31 63 127 255 511 1023 )
+N_PAD=(0 7 15 31 63 2047)
 
 if [ "$1" == "" ]; then
     N_ITER=1000000000
@@ -95,11 +110,14 @@ for n in "${N_ELEMENTS[@]}"; do
     done
 done
 
-# for n in "${N_ELEMENTS[@]}"; do
-#     prepare
-#     execute "shuffle" $n $N_ITER
-#     process
-# done
+for n in "${N_ELEMENTS[@]}"; do
+    for pad in "${N_PAD[@]}"; do
+        prepare
+        execute $pad "shuffle" $n $N_ITER
+        process
+    done
+done
+
 
 
 
