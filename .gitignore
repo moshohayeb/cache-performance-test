@@ -2,3 +2,5 @@ main
 cpuinfo_x86
 bench
 bench
+.gdb_history
+array
